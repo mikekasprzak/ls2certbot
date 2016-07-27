@@ -152,4 +152,21 @@ if ( isset($data['vhTemplate']) ) {
 	}
 }
 
-echo json_encode($ret,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n";
+//echo json_encode($ret,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n";
+
+// *** LS2CERTBOT STARTS HERE *** //
+
+$args = "certonly --webroot";
+
+foreach ( $ret as $template ) {
+	$root = str_replace('$SERVER_ROOT', $SERVER_ROOT, $template['vhRoot']);
+	
+	foreach ( $template['member'] as $key => $member ) {
+		$args .= " -w ".str_replace('$VH_NAME', $key, $root);
+		foreach ( $member as $domain ) {
+			$args .= " -d ".$domain;
+		}
+	}
+}
+
+echo $args;
