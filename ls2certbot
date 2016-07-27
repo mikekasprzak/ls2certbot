@@ -156,17 +156,36 @@ if ( isset($data['vhTemplate']) ) {
 
 // *** LS2CERTBOT STARTS HERE *** //
 
-$args = "certonly --webroot";
+$base = "certonly --quiet --webroot";
 
+// Single Command, Single Certificate //
+//$args = $base;
+//foreach ( $ret as $template ) {
+//	$root = str_replace('$SERVER_ROOT', $SERVER_ROOT, $template['vhRoot']);
+//	
+//	foreach ( $template['member'] as $key => $member ) {
+//		$args .= " -w ".str_replace('$VH_NAME', $key, $root);
+//		foreach ( $member as $domain ) {
+//			$args .= " -d ".$domain;
+//		}
+//	}
+//}
+//
+//echo $args;
+
+// Multiple Commands, Multiple Certificates //
+$args = [];
 foreach ( $ret as $template ) {
 	$root = str_replace('$SERVER_ROOT', $SERVER_ROOT, $template['vhRoot']);
 	
 	foreach ( $template['member'] as $key => $member ) {
-		$args .= " -w ".str_replace('$VH_NAME', $key, $root);
+		$arg = $base." -w ".str_replace('$VH_NAME', $key, $root);
 		foreach ( $member as $domain ) {
-			$args .= " -d ".$domain;
+			$args[] = $arg." -d ".$domain;
 		}
 	}
 }
 
-echo $args;
+foreach( $args as $arg ) {
+	echo $arg."\n";
+}
