@@ -1,0 +1,155 @@
+#!/usr/bin/env php
+<?php
+
+function tree_Add( &$node, $key, $value ) {
+	if ( array_key_exists($key,$node) ) {
+		if ( is_string($node[$key]) ) {
+			$node[$key] = [ $node[$key] ];
+			$node[$key][] = $value;
+		}
+		else if ( is_array($node[$key]) ) {
+			$node[$key][] = $value;
+		}
+		else {
+			// uh oh
+			return false;
+		}
+	}
+	else {
+		$node[$key] = $value;
+	}
+	return true;
+}
+
+function ls_Parse( &$FP ) {
+	$data = [];
+	
+	$indent = 0;
+	$stack = [];
+	$stack[] = &$data;
+	
+	while ( ($line = fgets($FP)) !== false ) {
+		$SP = &$stack[count($stack)-1];
+		$m = [];
+		
+		preg_match_all('/\S+/', $line, $m, PREG_OFFSET_CAPTURE);
+		if ( !isset($m[0][0]) ) {
+			// Blank Line //
+		}
+		else if ( isset($m[0][0]) && $m[0][0][0][0] == "#" ) {
+			// Comment (TODO: Make comment checking smarter) //
+		}
+		else if ( isset($m[0][1]) && $m[0][1][0] == "{" ) {
+			// Single Token w/ Brace //
+			$SP[$m[0][0][0]] = [];
+			$stack[] = &$SP[$m[0][0][0]];
+	
+			$indent++;
+		}
+		else if ( isset($m[0][2]) && $m[0][2][0] == "{" ) {
+			// Double Token w/ Brace //
+			if ( !isset($SP[$m[0][0][0]]) ) {
+				$SP[$m[0][0][0]] = [];
+			}
+			$SP[$m[0][0][0]][$m[0][1][0]] = [];
+			$stack[] = &$SP[$m[0][0][0]][$m[0][1][0]];
+	
+			$indent++;
+		}
+		else if ( isset($m[0][0]) && $m[0][0][0] == "}" ) {
+			// Closing Brace //
+			$indent--;
+	
+			array_pop($stack);
+		}
+		else {
+			// Everything else (KEY VALUE) //
+			$key = &$m[0][0][0];
+			$value = isset($m[0][1]) ? trim(substr($line, $m[0][1][1])) : null;
+			
+			// Check for ", ", and if found, make it an array //
+			if ( strpos($value, ', ') !== false ) {
+				$value = explode(', ',$value);
+			}
+			// Check for "<<<", which means a multi-line string //
+			else if ( strpos($value, '<<<') === 0 ) {
+				$term = trim(substr($value, 3));
+				$value = "";
+				$lines = 0;
+				
+				while ( $line2 = fgets($FP) ) {
+					if ( strpos($line2, $term) !== false ) {
+						break;
+					}
+					
+					if ( $lines > 0 ) {
+						$value .= "\n";
+					}
+					$value .= trim($line2,"\r\n");
+					$lines++;
+				}
+			}
+			
+			tree_Add($SP,$key,$value);
+		}
+	}
+	
+	return $data;
+}
+
+// *** LS2DOM STARTS HERE *** //
+
+$CONFIG_FILE = "httpd_config.conf";
+
+if ( count($argv) > 1 ) {
+	$SERVER_ROOT = $argv[1];
+	
+	$file = fopen($SERVER_ROOT.'/conf/'.$CONFIG_FILE, 'r');
+	if ( $file === false ) {
+		return -1;
+	}
+}
+else {
+	echo "\nusage: ".$argv[0]." litespeed_server_root\n\n";
+	return -1;	
+}
+
+$data = ls_Parse($file);
+
+$ret = [];
+
+// Look for Template domains //
+if ( isset($data['vhTemplate']) ) {
+	foreach ( $data['vhTemplate'] as $name => $template ) {
+		$ret[$name] = [];
+		$ret[$name]['templateFile'] = $template['templateFile'];
+		
+		$parsed_file = str_replace('$SERVER_ROOT', $SERVER_ROOT, $template['templateFile']);
+		//$ret[$name]['parsedFile'] = $parsed_file;
+		
+		$file2 = fopen( $parsed_file, "r" );
+		$template_data = ls_Parse($file2);
+		fclose($file2);
+		
+		//$ret[$name]['parsedFile'] = $parsed_file;
+	
+		$ret[$name]['vhRoot'] = $template_data['vhRoot'];
+	
+		$ret[$name]['member'] = [];
+		foreach ( $template['member'] as $key => $instance ) {
+			if ( !isset($ret[$name]['member'][$key]) ) {
+				$ret[$name]['member'][$key] = [];
+			}
+			
+			$ret[$name]['member'][$key][] = $instance['vhDomain'];
+			if ( is_array($instance['vhAliases']) ) {
+				$ret[$name]['member'][$key] = array_merge( $ret[$name]['member'][$key], $instance['vhAliases'] );
+			}
+			else if ( is_string($instance['vhAliases']) ) {
+				$ret[$name]['member'][$key][] = $instance['vhAliases'];
+			}
+		}
+	}
+}
+
+echo json_encode($ret,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n";
